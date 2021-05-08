@@ -1,93 +1,102 @@
 # On-Stack Dynamic Dispatch
 
-## Description
+## Описание
 
-We can dynamically dispatch over multiple values, however, to do so, we need
-to declare multiple variables to bind differently-typed objects. To extend the
-lifetime as necessary, we can use deferred conditional initialization, as seen
-below:
+В Rust не смотря на жесткую типизацию, мы можем инициализировать значение  
+динамически. Но для этого нам надо указать какой то общий типаж (trait) который  
+будут иметь все потенциальные варианты возращаемого значения. А так же иметь  
+несколько переменных для того, что бы привязвать объекты с разными типами.
+В примере ниже мы используем отложенную инициализацию, которая нам позволит  
+продлевать время жизни по мере необходимости:
 
-## Example
+## Пример
 
 ```rust
 use std::io;
 use std::fs;
 
-# fn main() -> Result<(), Box<dyn std::error::Error>> {
-# let arg = "-";
-
-// These must live longer than `readable`, and thus are declared first:
-let (mut stdin_read, mut file_read);
-
-// We need to ascribe the type to get dynamic dispatch.
-let readable: &mut dyn io::Read = if arg == "-" {
-    stdin_read = io::stdin();
-    &mut stdin_read
-} else {
-    file_read = fs::File::open(arg)?;
-    &mut file_read
-};
-
-// Read from `readable` here.
-
-# Ok(())
-# }
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let arg = "-";
+    
+    // Эти значения должны жить дольше чем переменная readable, поэтому мы
+    // должны объявить их первыми:
+    let (mut stdin_read, mut file_read);
+    
+    // Для того что бы получить динамическую инициализацию, нам нужно сначала
+    // задать переменной readable тип (в текущем примере это трейт).
+    let readable: &mut dyn io::Read = if arg == "-" {
+        stdin_read = io::stdin();
+        &mut stdin_read
+    } else {
+        file_read = fs::File::open(arg)?;
+        &mut file_read
+    };
+// Теперь можно читать из `readable`.
+ Ok(())
+}
 ```
 
-## Motivation
+## Зачем это нужно?
 
-Rust monomorphises code by default. This means a copy of the code will be
-generated for each type it is used with and optimized independently. While this
-allows for very fast code on the hot path, it also bloats the code in places
-where performance is not of the essence, thus costing compile time and cache
-usage.
+Так как Rust по умолчанию мономорфизирует код, компилятор будет создавать новую  
+копию для каждого выведенного типа и оптимизировать по отдельности. Хотя это  
+приводит к очень большому приросту производительности (по сравнению с полиморф-  
+ными языками), это так же может приводить к тому, что код в итоге получается  
+"раздутым", а время комиляции неуклонно растет.
 
-Luckily, Rust allows us to use dynamic dispatch, but we have to explicitly ask
-for it.
+К счастью, Rust так же позволяет нам использовать и динамическую передачу, но  
+тогда мы должны писать соответствующий код для кормилятора.
 
-## Advantages
+## Преимущества
 
-We do not need to allocate anything on the heap. Neither do we need to
-initialize something we won't use later, nor do we need to monomorphize the
-whole code that follows to work with both `File` or `Stdin`.
+Например нам не нужно алоцировать память в heap. Нам так же не нужно инициализи-  
+ровать то что мы не будем использовать позже. Что позволит компилятору пропустить  
+мономорфизацию не нужного нам кода. В результате в нашем примере выше, ни `File`  
+ни `Stdin` не будут мономорфизироваться.
 
-## Disadvantages
+## Недостатки
 
-The code needs more moving parts than the `Box`-based version:
+Код в становится более объемным и пространным чем основанный на `Box`:
 
-```rust,ignore
-// We still need to ascribe the type for dynamic dispatch.
-let readable: Box<dyn io::Read> = if arg == "-" {
-    Box::new(io::stdin())
-} else {
-    Box::new(fs::File::open(arg)?)
-};
-// Read from `readable` here.
+```rust
+use std::io;
+use std::fs;
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Нам все еще нужно задавать тип.
+    let readable: Box<dyn io::Read> = if arg == "-" {
+        Box::new(io::stdin())
+    } else {
+        Box::new(fs::File::open(arg)?)
+    };
+// Теперь можно читать из `readable`.
+}
 ```
 
-## Discussion
+## Давайте обсудим
 
-Rust newcomers will usually learn that Rust requires all variables to be
-initialized *before use*, so it's easy to overlook the fact that *unused*
-variables may well be uninitialized. Rust works quite hard to ensure that this
-works out fine and only the initialized values are dropped at the end of their
-scope.
+Тот кто начинает изучать Rust, первым делом сталкивается с тем, что все переменные   
+должны быть инициализированы *перед использованием*, поэтому могут легко упустить 
+из виду тот факт, что инициализацию для *неиспользуемых* переменных можно опустить. 
+Rust в свою очередь будет усердно работать, чтобы все работало нормально, и только 
+инициализированные значения отбрасывались при выходе из области видимости.
 
-The example meets all the constraints Rust places on us:
+Пример соответствует всем ограничениям, которые накладывает на нас Rust:
 
-* All variables are initialized before using (in this case borrowing) them
-* Each variable only holds values of a single type. In our example, `stdin` is
-of type `Stdin`, `file` is of type `File` and `readable` is of type `&mut dyn
-Read`
-* Each borrowed value outlives all the references borrowed from it
+* Все переменные инициализируются перед их использованием (в данном случае с помощью
+заимствования).
+* Каждая переменная хранит только один конкретный тип. В нашем примере, `stdin`  
+имеет тип `Stdin`, `file` имеет тип `File`, а `readable` относится к типу `&mut dyn
+Read`.
+* Каждое заимствованное значение переживает все заимствованные из него ссылки.
 
-## See also
+## Смотрите так же
 
-* [Finalisation in destructors](dtor-finally.md) and
-[RAII guards](../patterns/behavioural/RAII.md) can benefit from tight control over
-lifetimes.
-* For conditionally filled `Option<&T>`s of (mutable) references, one can
-initialize an `Option<T>` directly and use its [`.as_ref()`] method to get an
-optional reference.
+* [Finalisation in destructors](dtor-finally.md) и 
+[RAII guards](../patterns/behavioural/RAII.md) как извлекать выгоду из жесткого
+контроля над временем жизни.
+* Алгебраличиские типы `Option<&T>` содержащие изменяемую (mutable) ссылку,  
+можно инициализировать напрямую как `Option<T>` и использовать метод [`.as_ref()`]
+что бы получать опциональную ссылку.
 
 [`.as_ref()`]: https://doc.rust-lang.org/std/option/enum.Option.html#method.as_ref

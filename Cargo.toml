@@ -1,0 +1,14 @@
+[package]
+name = "rust-patterns"
+version = "0.0.1"
+edition = "2018"
+
+[dependencies]
+futures = { version = "0.3", default_features = false, features = ["executor"] }
+reqwest = "0.11.3"
+clap = "2.33"
+serde = "1.0"
+
+[[example]]
+name = "on_stack_dyn_dispatch"
+path = "examples/on_stack_dyn_dispatch.rs"
