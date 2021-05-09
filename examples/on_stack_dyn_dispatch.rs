@@ -5,6 +5,7 @@ use {
     reqwest::{Client, Response, Error},
     futures::Future,
 };
+use std::pin::Pin;
 
 // Как и все остальные примеры, этот так же основан на абстрактной web задаче
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -32,7 +33,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // должны объявить их первыми:
     let (mut get, mut post);
 
-    let _response: &dyn Future<Output=Result<Response, Error>> = match &matches.subcommand_name() {
+    let response: &dyn Future<Output=Result<Response, Error>> = match &matches.subcommand_name() {
         Some("get") => {
             let url = &matches
                 .subcommand_matches("get")
@@ -58,6 +59,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         _ => panic!("Error")
     };
+
 
     Ok(())
 }
